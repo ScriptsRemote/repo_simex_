@@ -25,15 +25,17 @@ def load_df(url):
     return pd.read_parquet(url)  # Lê o arquivo Parquet com Pandas.
 
 # Carrega o GeoJSON com os limites dos assentamentos na Amazônia Legal.
-roi = load_geojson("https://raw.githubusercontent.com/ScriptsRemote/repo_simex_/master/datasets/geojson/simex_amazonia_PAMT2007_2023_TI.geojson")
+roi = load_geojson("https://raw.githubusercontent.com/ScriptsRemote/repo_simex_/master/datasets/geojson/simex_amazonia_PAMT2007_2023_UC.geojson")
 # Tenta decodificar caracteres problemáticos
-roi['terrai_nom'] = roi['terrai_nom'].str.encode('latin1', errors='ignore').str.decode('utf-8', errors='ignore')
+roi['nome_1'] = roi['nome_1'].str.encode('latin1', errors='ignore').str.decode('utf-8', errors='ignore')
 # Carrega o arquivo Parquet com dados de exploração madeireira.
-df = load_df('https://raw.githubusercontent.com/ScriptsRemote/repo_simex_/master/datasets/csv/simex_amazonia_PAMT2007_2023_TI.parquet')
+df = load_df('https://raw.githubusercontent.com/ScriptsRemote/repo_simex_/master/datasets/csv/simex_amazonia_PAMT2007_2023_UC.parquet')
 # Tenta decodificar caracteres problemáticos
-df['terrai_nom'] = df['terrai_nom'].str.encode('latin1', errors='ignore').str.decode('utf-8', errors='ignore')
+df['nome_1'] = df['nome_1'].str.encode('latin1', errors='ignore').str.decode('utf-8', errors='ignore')
 # Garantindo que todos os valores sejam strings
-df['terrai_nom'] = df['terrai_nom'].astype(str)
+df['nome_1'] = df['nome_1'].astype(str)
+
+df
 
 # Cria listas de opções para os filtros de estado e ano com valores únicos.
 list_states = df['sigla_uf'].unique()  # Lista de siglas dos estados únicos.
@@ -141,6 +143,16 @@ app.layout = dbc.Container([
             dcc.Graph(id='line-graph')  # Gráfico de linhas para série temporal.
         ], className="graph-block"), width=12)
     ], className='mb-4'),
+    
+    # Linha com dois gráficos de pizza lado a lado.
+    dbc.Row([
+        dbc.Col(dbc.Card([
+            dcc.Graph(id='pie-chart')  # Primeiro gráfico de pizza.
+        ], className="graph-block"), width=6),  # Ocupa metade da largura.
+        dbc.Col(dbc.Card([
+            dcc.Graph(id='pie-chart-uf-esfera')  # Segundo gráfico de pizza.
+        ], className="graph-block"), width=6)  # Ocupa metade da largura.
+    ], className='mb-4'),
 
     # Armazena dados de estado selecionados, ano e áreas de interesse.
     dcc.Store(id='selected-states', data=[]),
@@ -214,15 +226,15 @@ app.layout = dbc.Container([
 
 # Função para preencher anos faltantes no DataFrame.
 def preencher_anos_faltantes(df, anos, municipios):
-    df_agg = df.groupby(['ano', 'terrai_nom'], as_index=False).sum()  # Agrupa por ano e Município, somando áreas.
-    full_index = pd.MultiIndex.from_product([anos, municipios], names=["ano", "terrai_nom"])  # Cria índice completo.
-    df_full = df_agg.set_index(["ano", "terrai_nom"]).reindex(full_index, fill_value=0).reset_index()  # Reindexa preenchendo valores faltantes com 0.
+    df_agg = df.groupby(['ano', 'nome_1'], as_index=False).sum()  # Agrupa por ano e Município, somando áreas.
+    full_index = pd.MultiIndex.from_product([anos, municipios], names=["ano", "nome_1"])  # Cria índice completo.
+    df_full = df_agg.set_index(["ano", "nome_1"]).reindex(full_index, fill_value=0).reset_index()  # Reindexa preenchendo valores faltantes com 0.
     return df_full
 
 # Função para obter o centroide de um assentamento a partir do GeoDataFrame.
 def get_centroid(geojson, municipio_nome):
     try:
-        gdf_municipio = geojson[geojson['terrai_nom'] == municipio_nome]  # Filtra pelo nome do assentamento.
+        gdf_municipio = geojson[geojson['nome_1'] == municipio_nome]  # Filtra pelo nome do assentamento.
         if not gdf_municipio.empty:
             centroid = gdf_municipio.geometry.centroid.iloc[0]  # Obtém o centroide.
             return centroid.y, centroid.x
@@ -236,6 +248,8 @@ def get_centroid(geojson, municipio_nome):
     [Output('bar-graph-yearly', 'figure'),
      Output('choropleth-map', 'figure'),
      Output('line-graph', 'figure'),
+     Output('pie-chart', 'figure'),  # Nova saída
+     Output('pie-chart-uf-esfera', 'figure'),  # Novo gráfico
      Output('selected-states', 'data'),
      Output('state-dropdown-modal', 'value'),
      Output('selected-area', 'data'),
@@ -298,7 +312,7 @@ def update_graphs(start_year, end_year, selected_category, map_click_data, bar_c
     # Manipulação do clique no mapa.
     if triggered_id == 'choropleth-map.clickData' and map_click_data:
         selected_municipio = map_click_data['points'][0]['location']  # Identifica o assentamento clicado no mapa.
-        if selected_municipio in df['terrai_nom'].values:
+        if selected_municipio in df['nome_1'].values:
             if selected_municipio in selected_area_state:
                 selected_area_state.remove(selected_municipio)  # Remove a área caso esteja selecionada.
             else:
@@ -328,31 +342,31 @@ def update_graphs(start_year, end_year, selected_category, map_click_data, bar_c
     if selected_state:
         df_filtered = df_filtered[df_filtered['sigla_uf'].isin(selected_state)]
     if selected_area_state:
-        df_filtered = df_filtered[df_filtered['terrai_nom'].isin(selected_area_state)]
+        df_filtered = df_filtered[df_filtered['nome_1'].isin(selected_area_state)]
 
     # Define as opções de áreas para o dropdown de áreas de interesse.
-    area_options = [{'label': terrai_nom, 'value': terrai_nom} for terrai_nom in df_filtered['terrai_nom'].unique()]
+    area_options = [{'label': nome_1, 'value': nome_1} for nome_1 in df_filtered['nome_1'].unique()]
     title_text = f"Categoria: {selected_category or 'Todas'}"
     
     # Seleção das top 10 áreas por ordem decrescente de exploração.
-    df_acumulado_municipio = df_filtered.groupby(['terrai_nom'], as_index=False).agg({
-        'area_ha': 'sum',  # Soma as áreas por `terrai_nom`.
-        'nome': 'first'    # Mantém o primeiro valor de `nome` correspondente a cada `terrai_nom`.
+    df_acumulado_municipio = df_filtered.groupby(['nome_1'], as_index=False).agg({
+        'area_ha': 'sum',  # Soma as áreas por `nome_1`.
+        'nome': 'first'    # Mantém o primeiro valor de `nome` correspondente a cada `nome_1`.
     })
     df_top_10 = df_acumulado_municipio.sort_values(by='area_ha', ascending=False).head(10)
     
     # Remove caracteres inválidos e normaliza a codificação
-    df_top_10['terrai_nom'] = df_top_10['terrai_nom'].str.encode('latin1', errors='ignore').str.decode('utf-8', errors='ignore')
-    df_top_10['terrai_nom'] = df_top_10['terrai_nom'].str.replace(r'[^\x00-\x7F]+', '', regex=True)  # Remove caracteres não-ASCII
+    df_top_10['nome_1'] = df_top_10['nome_1'].str.encode('latin1', errors='ignore').str.decode('utf-8', errors='ignore')
+    df_top_10['nome_1'] = df_top_10['nome_1'].str.replace(r'[^\x00-\x7F]+', '', regex=True)  # Remove caracteres não-ASCII
             
      # Truncar os nomes das áreas para até 10 caracteres
-    df_top_10['short_terrai_nom'] = df_top_10['terrai_nom'].apply(lambda x: x[:10] + '...' if len(x) > 10 else x)
+    df_top_10['short_nome_1'] = df_top_10['nome_1'].apply(lambda x: x[:10] + '...' if len(x) > 10 else x)
 
     # Cria o gráfico de barras com top 10 áreas.
-    marker_colors = ['darkcyan' if nome in selected_areas_store else 'lightgray' for nome in df_top_10['terrai_nom']]
+    marker_colors = ['darkcyan' if nome in selected_areas_store else 'lightgray' for nome in df_top_10['nome_1']]
     # Cria o gráfico de barras com top 10 áreas.
     bar_yearly_fig = go.Figure(go.Bar(
-        y=df_top_10['terrai_nom'],  # Usa os nomes originais como identificadores.
+        y=df_top_10['nome_1'],  # Usa os nomes originais como identificadores.
         x=df_top_10['area_ha'],
         orientation='h',
         marker_color=marker_colors,
@@ -386,16 +400,16 @@ def update_graphs(start_year, end_year, selected_category, map_click_data, bar_c
         ),
          yaxis=dict(
         categoryorder='array',
-        categoryarray=df_top_10.sort_values(by='area_ha', ascending=True)['terrai_nom'].tolist(),
+        categoryarray=df_top_10.sort_values(by='area_ha', ascending=True)['nome_1'].tolist(),
         tickfont=dict(size=8)  # Reduz o tamanho da fonte
                      ),
     )
 
     # Mapa com top 10 áreas usando GeoJSON.
     if selected_areas_store:
-        roi_selected = roi[roi['terrai_nom'].isin(selected_areas_store)]
+        roi_selected = roi[roi['nome_1'].isin(selected_areas_store)]
     else:
-        roi_selected = roi[roi['terrai_nom'].isin(df_top_10['terrai_nom'])]
+        roi_selected = roi[roi['nome_1'].isin(df_top_10['nome_1'])]
 
     # Define o centro do mapa com base na seleção.
     if selected_area_state:
@@ -408,12 +422,12 @@ def update_graphs(start_year, end_year, selected_category, map_click_data, bar_c
     # Configura o mapa coroplético.
     map_fig = px.choropleth_mapbox(
         df_top_10, geojson=roi_selected, color='area_ha',
-        locations="terrai_nom",
-        featureidkey="properties.terrai_nom",
+        locations="nome_1",
+        featureidkey="properties.nome_1",
         mapbox_style="carto-positron",
         center={"lat": lat, "lon": lon},
         color_continuous_scale='YlOrRd',
-        hover_data={"nome": True, "terrai_nom": True, "area_ha": True},  # Adiciona 'terrai_nom' ao tooltip
+        hover_data={"nome": True, "nome_1": True, "area_ha": True},  # Adiciona 'nome_1' ao tooltip
         zoom=zoom
     )
 
@@ -428,12 +442,12 @@ def update_graphs(start_year, end_year, selected_category, map_click_data, bar_c
     if selected_areas_store:
         areas_to_plot = selected_areas_store
     else:
-        areas_to_plot = df_top_10['terrai_nom']
+        areas_to_plot = df_top_10['nome_1']
 
     # Agrupamento de dados para gráfico de linhas.
-    df_line = df_filtered[df_filtered['terrai_nom'].isin(areas_to_plot)].groupby(['ano', 'terrai_nom', 'sigla_uf'])['area_ha'].sum().reset_index()
+    df_line = df_filtered[df_filtered['nome_1'].isin(areas_to_plot)].groupby(['ano', 'nome_1', 'sigla_uf'])['area_ha'].sum().reset_index()
     df_line_full = preencher_anos_faltantes(df_line, sorted(df_filtered['ano'].unique()), areas_to_plot)
-    line_fig = px.line(df_line_full, x='ano', y='area_ha', color='terrai_nom',
+    line_fig = px.line(df_line_full, x='ano', y='area_ha', color='nome_1',
                     title=f'Série Histórica de Área de Exploração Madeireira - {title_text}',
                     labels={'area_ha': 'Área por ano (ha)', 'ano': 'Ano'},
                     template='plotly_white', line_shape='linear')
@@ -456,8 +470,35 @@ def update_graphs(start_year, end_year, selected_category, map_click_data, bar_c
         )
 )
 
+    # Agrupar os dados pela coluna 'grupo' e somar as áreas.
+    df_grouped = df_filtered.groupby('grupo')['area_ha'].sum().reset_index()
+
+    # Criar o gráfico de pizza.
+    pie_fig = px.pie(
+        df_grouped,
+        names='grupo',
+        values='area_ha',
+        title=f'Proporção de Áreas Acumuladas por Grupo ({start_year} - {end_year})',
+        hole=0.4,  # Gráfico do tipo "donut"
+        color_discrete_sequence=px.colors.sequential.RdBu
+    )
+    
+    # Agrupar os dados por sigla_uf e esfera.
+    df_grouped_uf_esfera = df_filtered.groupby(['sigla_uf', 'esfera'])['area_ha'].sum().reset_index()
+
+    # Criar o gráfico de pizza por sigla_uf e esfera.
+    pie_fig_uf_esfera = px.pie(
+        df_grouped_uf_esfera,
+        names='sigla_uf',
+        values='area_ha',
+        color='esfera',
+        title=f'Proporção de Área por Estado e Esfera ({start_year} - {end_year})',
+        hole=0.3,  # Gráfico do tipo "donut"
+        color_discrete_sequence=px.colors.diverging.RdBu
+    )
+    
     # Retorno das figuras e dados para armazenar.
-    return bar_yearly_fig, map_fig, line_fig, selected_states, selected_state, selected_area_state, area_options, None, selected_areas_store
+    return bar_yearly_fig, map_fig, line_fig, pie_fig,pie_fig_uf_esfera,selected_states, selected_state, selected_area_state, area_options, None, selected_areas_store
 
 
 # Callback para abrir e fechar o modal de seleção de estado.
