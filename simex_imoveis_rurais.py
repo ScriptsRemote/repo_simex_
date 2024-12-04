@@ -215,15 +215,15 @@ app.layout = dbc.Container([
 
 # Função para preencher anos faltantes no DataFrame.
 def preencher_anos_faltantes(df, anos, municipios):
-    df_agg = df.groupby(['ano', 'name'], as_index=False).sum()  # Agrupa por ano e Município, somando áreas.
-    full_index = pd.MultiIndex.from_product([anos, municipios], names=["ano", "name"])  # Cria índice completo.
-    df_full = df_agg.set_index(["ano", "name"]).reindex(full_index, fill_value=0).reset_index()  # Reindexa preenchendo valores faltantes com 0.
+    df_agg = df.groupby(['ano', 'nome'], as_index=False).sum()  # Agrupa por ano e Município, somando áreas.
+    full_index = pd.MultiIndex.from_product([anos, municipios], names=["ano", "nome"])  # Cria índice completo.
+    df_full = df_agg.set_index(["ano", "nome"]).reindex(full_index, fill_value=0).reset_index()  # Reindexa preenchendo valores faltantes com 0.
     return df_full
 
 # Função para obter o centroide de um assentamento a partir do GeoDataFrame.
 def get_centroid(geojson, municipio_nome):
     try:
-        gdf_municipio = geojson[geojson['name'] == municipio_nome]  # Filtra pelo nome do assentamento.
+        gdf_municipio = geojson[geojson['nome'] == municipio_nome]  # Filtra pelo nome do assentamento.
         if not gdf_municipio.empty:
             centroid = gdf_municipio.geometry.centroid.iloc[0]  # Obtém o centroide.
             return centroid.y, centroid.x
@@ -299,7 +299,7 @@ def update_graphs(start_year, end_year, selected_category, map_click_data, bar_c
     # Manipulação do clique no mapa.
     if triggered_id == 'choropleth-map.clickData' and map_click_data:
         selected_municipio = map_click_data['points'][0]['location']  # Identifica o assentamento clicado no mapa.
-        if selected_municipio in df['name'].values:
+        if selected_municipio in df['nome'].values:
             if selected_municipio in selected_area_state:
                 selected_area_state.remove(selected_municipio)  # Remove a área caso esteja selecionada.
             else:
@@ -329,43 +329,46 @@ def update_graphs(start_year, end_year, selected_category, map_click_data, bar_c
     if selected_state:
         df_filtered = df_filtered[df_filtered['sigla_uf'].isin(selected_state)]
     if selected_area_state:
-        df_filtered = df_filtered[df_filtered['name'].isin(selected_area_state)]
+        df_filtered = df_filtered[df_filtered['nome'].isin(selected_area_state)]
 
     # Define as opções de áreas para o dropdown de áreas de interesse.
-    area_options = [{'label': name, 'value': name} for name in df_filtered['name'].unique()]
+    area_options = [{'label': nome, 'value': nome} for nome in df_filtered['nome'].unique()]
     title_text = f"Categoria: {selected_category or 'Todas'}"
     
-    # Seleção das top 10 áreas por ordem decrescente de exploração.
-    df_acumulado_municipio = df_filtered.groupby(['name'], as_index=False).agg({
-        'area_ha': 'sum',  # Soma as áreas por `name`.
-        'nome': 'first'    # Mantém o primeiro valor de `nome` correspondente a cada `name`.
-    })
+    # Passo 1: Remover duplicatas dentro do mesmo ano
+    df_filtered = df_filtered.drop_duplicates(subset=['name', 'area_ha', 'nome', 'geocodigo', 'ano'])
+
+    df_acumulado_municipio = df_filtered.groupby(['nome'], as_index=False).agg({
+            'area_ha': 'sum',  # Soma as áreas por name.
+            'name': 'first'    # Mantém o primeiro valor de nome correspondente a cada name.
+        })
+        # Passo 3: Opcional - Remover duplicatas adicionais após o agrupamento, se necessário
+    df_acumulado_municipio = df_acumulado_municipio.drop_duplicates(subset=['nome', 'area_ha'])
+
+    # Passo 4: Selecionar os 10 registros com maior valor acumulado de área
     df_top_10 = df_acumulado_municipio.sort_values(by='area_ha', ascending=False).head(10)
-        
-     # Truncar os nomes das áreas para até 10 caracteres
-    df_top_10['short_name'] = df_top_10['name'].apply(lambda x: x[:10] + '...' if len(x) > 10 else x)
 
     # Cria o gráfico de barras com top 10 áreas.
-    marker_colors = ['darkcyan' if nome in selected_areas_store else 'lightgray' for nome in df_top_10['name']]
+    marker_colors = ['darkcyan' if nome in selected_areas_store else 'lightgray' for nome in df_top_10['nome']]
     bar_yearly_fig = go.Figure(go.Bar(
-        y=df_top_10['short_name'],  # Usa os nomes truncados
+        y=df_top_10['nome'],  # Usa os nomes truncados
         x=df_top_10['area_ha'],
         orientation='h',
         marker_color=marker_colors,
         text=[f"{value:.2f} ha" for value in df_top_10['area_ha']],
         textposition='auto',
-        customdata=df_top_10['nome'],  # Inclui os dados customizados (nome)
+        customdata=df_top_10['name'],  # Inclui os dados customizados (nome)
         hovertemplate=(
             "<b>Área:</b> %{x:.2f} ha<br>"  # Mostra o valor de 'area_ha'
-            "<b>Assentamento:</b> %{y}<br>"  # Mostra o valor de 'short_name'
-            "<b>Nome:</b> %{customdata}"  # Mostra o valor de 'name'
+            "<b>Município:</b> %{y}<br>"  # Mostra o valor de 'short_name'
+            "<b>ImoVelRur:</b> %{customdata}"  # Mostra o valor de 'name'
             "<extra></extra>"  # Remove informações extras padrão
         )
     ))
 
     # Ajusta o layout do gráfico de barras para exibir valores maiores em cima e configura a legenda.
     bar_yearly_fig.update_layout(
-        title={'text': f"Área Acumulada de Exploração Madeireira - {title_text}", 'x': 0.5},
+        title={'text': f"Área Acumulada de Exploração Madeireira - Imóveis Rurais Privados {title_text}", 'x': 0.5},
         titlefont=dict(size=12),
         width=700,
         xaxis_title='Hectares (ha)',
@@ -383,15 +386,15 @@ def update_graphs(start_year, end_year, selected_category, map_click_data, bar_c
         ),
         yaxis=dict(
             categoryorder='array',
-            categoryarray=df_top_10.sort_values(by='area_ha', ascending=True)['short_name'].tolist()  # Usa os nomes truncados
+            categoryarray=df_top_10.sort_values(by='area_ha', ascending=True)['nome'].tolist()  # Usa os nomes truncados
         )
     )
 
     # Mapa com top 10 áreas usando GeoJSON.
     if selected_areas_store:
-        roi_selected = roi[roi['name'].isin(selected_areas_store)]
+        roi_selected = roi[roi['nome'].isin(selected_areas_store)]
     else:
-        roi_selected = roi[roi['name'].isin(df_top_10['name'])]
+        roi_selected = roi[roi['nome'].isin(df_top_10['nome'])]
 
     # Define o centro do mapa com base na seleção.
     if selected_area_state:
@@ -404,8 +407,8 @@ def update_graphs(start_year, end_year, selected_category, map_click_data, bar_c
     # Configura o mapa coroplético.
     map_fig = px.choropleth_mapbox(
         df_top_10, geojson=roi_selected, color='area_ha',
-        locations="name",
-        featureidkey="properties.name",
+        locations="nome",
+        featureidkey="properties.nome",
         mapbox_style="carto-positron",
         center={"lat": lat, "lon": lon},
         color_continuous_scale='YlOrRd',
@@ -417,20 +420,20 @@ def update_graphs(start_year, end_year, selected_category, map_click_data, bar_c
     map_fig.update_layout(
         coloraxis_colorbar=dict(title="Hectares"),
         margin={"r": 0, "t": 50, "l": 0, "b": 0},
-        title={'text': f"Mapa de Exploração Madeireira (ha) - {title_text}", 'x': 0.5}
+        title={'text': f"Mapa de Exploração Madeireira (ha) - Imóveis Rurais Privados  {title_text}", 'x': 0.5}
     )
 
     # Gráfico de linha para áreas selecionadas ou top 10.
     if selected_areas_store:
         areas_to_plot = selected_areas_store
     else:
-        areas_to_plot = df_top_10['name']
+        areas_to_plot = df_top_10['nome']
 
     # Agrupamento de dados para gráfico de linhas.
-    df_line = df_filtered[df_filtered['name'].isin(areas_to_plot)].groupby(['ano', 'name', 'sigla_uf'])['area_ha'].sum().reset_index()
+    df_line = df_filtered[df_filtered['nome'].isin(areas_to_plot)].groupby(['ano', 'nome', 'sigla_uf'])['area_ha'].sum().reset_index()
     df_line_full = preencher_anos_faltantes(df_line, sorted(df_filtered['ano'].unique()), areas_to_plot)
-    line_fig = px.line(df_line_full, x='ano', y='area_ha', color='name',
-                    title=f'Série Histórica de Área de Exploração Madeireira - {title_text}',
+    line_fig = px.line(df_line_full, x='ano', y='area_ha', color='nome',
+                    title=f'Série Histórica de Área de Exploração Madeireira - Imóveis Rurais Privados {title_text}',
                     labels={'area_ha': 'Área por ano (ha)', 'ano': 'Ano'},
                     template='plotly_white', line_shape='linear')
     

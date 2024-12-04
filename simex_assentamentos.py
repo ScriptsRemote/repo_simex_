@@ -340,28 +340,32 @@ def update_graphs(start_year, end_year, selected_category, map_click_data, bar_c
         'nome': 'first'    # Mantém o primeiro valor de `nome` correspondente a cada `name`.
     })
     df_top_10 = df_acumulado_municipio.sort_values(by='area_ha', ascending=False).head(10)
-        
+    
+    # Remove caracteres inválidos e normaliza a codificação
+    df_top_10['name'] = df_top_10['name'].str.encode('latin1', errors='ignore').str.decode('utf-8', errors='ignore')
+    df_top_10['name'] = df_top_10['name'].str.replace(r'[^\x00-\x7F]+', '', regex=True)  # Remove caracteres não-ASCII
+            
      # Truncar os nomes das áreas para até 10 caracteres
     df_top_10['short_name'] = df_top_10['name'].apply(lambda x: x[:10] + '...' if len(x) > 10 else x)
 
     # Cria o gráfico de barras com top 10 áreas.
     marker_colors = ['darkcyan' if nome in selected_areas_store else 'lightgray' for nome in df_top_10['name']]
+    # Cria o gráfico de barras com top 10 áreas.
     bar_yearly_fig = go.Figure(go.Bar(
-        y=df_top_10['short_name'],  # Usa os nomes truncados
+        y=df_top_10['name'],  # Usa os nomes originais como identificadores.
         x=df_top_10['area_ha'],
         orientation='h',
         marker_color=marker_colors,
-        text=[f"{value:.2f} ha" for value in df_top_10['area_ha']],
+        # text=df_top_10['nome'],  # Exibe os nomes truncados como rótulos.
         textposition='auto',
-        customdata=df_top_10['name'],  # Inclui os dados customizados (nome)
+        customdata=df_top_10['nome'],  # Inclui os dados originais como referência para interação.
         hovertemplate=(
-            "<b>Área:</b> %{x:.2f} ha<br>"  # Mostra o valor de 'area_ha'
-            "<b>Assentamento:</b> %{y}<br>"  # Mostra o valor de 'short_name'
-            "<b>Nome:</b> %{customdata}"  # Mostra o valor de 'name'
-            "<extra></extra>"  # Remove informações extras padrão
+            "<b>Área:</b> %{x:.2f} ha<br>"
+            "<b>Assentamento:</b> %{y}<br>"  # Mostra o rótulo truncado.
+            "<b>Nome completo:</b> %{customdata}"  # Mostra o nome completo.
+            "<extra></extra>"
         )
-    ))
-
+))
     # Ajusta o layout do gráfico de barras para exibir valores maiores em cima e configura a legenda.
     bar_yearly_fig.update_layout(
         title={'text': f"Área Acumulada de Exploração Madeireira - {title_text}", 'x': 0.5},
@@ -380,10 +384,11 @@ def update_graphs(start_year, end_year, selected_category, map_click_data, bar_c
                 size=8  # Ajusta o tamanho da fonte das legendas
             )
         ),
-        yaxis=dict(
-            categoryorder='array',
-            categoryarray=df_top_10.sort_values(by='area_ha', ascending=True)['short_name'].tolist()  # Usa os nomes truncados
-        )
+         yaxis=dict(
+        categoryorder='array',
+        categoryarray=df_top_10.sort_values(by='area_ha', ascending=True)['name'].tolist(),
+        tickfont=dict(size=8)  # Reduz o tamanho da fonte
+                     ),
     )
 
     # Mapa com top 10 áreas usando GeoJSON.
