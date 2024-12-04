@@ -26,10 +26,10 @@ def load_df(url):
 
 # Carrega o GeoJSON com os limites dos municípios na Amazônia Legal.
 roi = load_geojson('https://github.com/ScriptsRemote/repo_simex_/raw/master/datasets/geojson/limite_municipios_amz_legal.geojson')
-roi
+
 # Carrega o arquivo Parquet com dados de exploração madeireira.
 df = load_df('https://github.com/ScriptsRemote/repo_simex_/raw/master/datasets/csv/simex_amazonia_PAMT2007_2023_mun.parquet')
-df
+
 # Cria listas de opções para os filtros de estado e ano com valores únicos.
 list_states = df['sigla_uf'].unique()  # Lista de siglas dos estados únicos.
 list_anual = sorted(df['ano'].unique())  # Lista de anos únicos ordenada.
@@ -217,7 +217,7 @@ def preencher_anos_faltantes(df, anos, municipios):
 # Função para obter o centroide de um município a partir do GeoDataFrame.
 def get_centroid(geojson, municipio_nome):
     try:
-        gdf_municipio = geojson[geojson['nome'] == municipio_nome]  # Filtra pelo nome do município.
+        gdf_municipio = geojson[geojson['NM_MUN'] == municipio_nome]  # Filtra pelo nome do município.
         if not gdf_municipio.empty:
             centroid = gdf_municipio.geometry.centroid.iloc[0]  # Obtém o centroide.
             return centroid.y, centroid.x
@@ -359,9 +359,9 @@ def update_graphs(start_year, end_year, selected_category, map_click_data, bar_c
 
     # Mapa com top 10 áreas usando GeoJSON.
     if selected_areas_store:
-        roi_selected = roi[roi['nome'].isin(selected_areas_store)]
+        roi_selected = roi[roi['NM_MUN'].isin(selected_areas_store)]
     else:
-        roi_selected = roi[roi['nome'].isin(df_top_10['nome'])]
+        roi_selected = roi[roi['NM_MUN'].isin(df_top_10['nome'])]
 
     # Define o centro do mapa com base na seleção.
     if selected_area_state:
@@ -375,7 +375,7 @@ def update_graphs(start_year, end_year, selected_category, map_click_data, bar_c
     map_fig = px.choropleth_mapbox(
         df_top_10, geojson=roi_selected, color='area_ha',
         locations="nome",
-        featureidkey="properties.nome",
+        featureidkey="properties.NM_MUN",
         mapbox_style="carto-positron",
         center={"lat": lat, "lon": lon},
         color_continuous_scale='YlOrRd',
